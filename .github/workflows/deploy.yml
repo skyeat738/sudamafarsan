@@ -1,0 +1,200 @@
+name: Deploy Sudama Farsan
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # ==========================================
+      # Checkout GitHub Repository
+      # ==========================================
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # Deploy to Hostinger
+      # ==========================================
+      - name: Deploy to Hostinger
+        uses: appleboy/ssh-action@v1
+
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USERNAME }}
+          password: ${{ secrets.HOSTINGER_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_PORT }}
+
+          command_timeout: 20m
+
+          script: |
+            set -e
+
+            echo "================================="
+            echo "   DEPLOYING SUDAMA FARSAN"
+            echo "================================="
+
+            TARGET="/home/u310066937/domains/skynetitsolutions.com/public_html/sudamafarsan"
+
+            echo "=== Target Directory ==="
+            echo "$TARGET"
+
+            cd "$TARGET"
+
+            echo "=== Current Directory ==="
+            pwd
+
+            echo "=== Before Git Update ==="
+            ls -la
+
+            # ==========================================
+            # Git Update
+            # ==========================================
+
+            echo "=== Git Update ==="
+
+            git fetch https://x-access-token:${{ github.token }}@github.com/skyeat738/sudamafarsan.git main
+
+            git reset --hard FETCH_HEAD
+
+            echo "=== Git Update Complete ==="
+
+            # ==========================================
+            # IMPORTANT:
+            # .env is NOT stored in GitHub.
+            # Existing Hostinger .env remains untouched.
+            # ==========================================
+
+            echo "=== Files After Git Update ==="
+            ls -la
+
+            # ==========================================
+            # Check Laravel Project
+            # ==========================================
+
+            echo "=== Composer Check ==="
+
+            if [ ! -f composer.json ]; then
+              echo "ERROR: composer.json NOT FOUND!"
+              echo "Current directory:"
+              pwd
+              echo "Files:"
+              ls -la
+              exit 1
+            fi
+
+            echo "composer.json FOUND"
+
+            # ==========================================
+            # Check .env
+            # ==========================================
+
+            echo "=== Environment Check ==="
+
+            if [ ! -f .env ]; then
+              echo "ERROR: .env NOT FOUND on Hostinger!"
+              echo "Create the production .env before deployment."
+              exit 1
+            fi
+
+            echo ".env FOUND"
+
+            # ==========================================
+            # PHP
+            # ==========================================
+
+            echo "=== PHP Version ==="
+
+            php -v
+
+            # ==========================================
+            # Composer
+            # ==========================================
+
+            echo "=== Composer Version ==="
+
+            composer --version
+
+            echo "=== Composer Install ==="
+
+            composer install \
+              --no-dev \
+              --prefer-dist \
+              --optimize-autoloader \
+              --no-interaction \
+              --no-scripts
+
+            # ==========================================
+            # Laravel
+            # ==========================================
+
+            echo "=== Laravel Version ==="
+
+            php artisan --version
+
+            # ==========================================
+            # Application Key
+            # ==========================================
+            # DO NOT run key:generate on every deployment.
+            # APP_KEY must remain stable in production.
+            # ==========================================
+
+            echo "=== APP KEY Check ==="
+
+            if grep -q "^APP_KEY=.\+" .env; then
+              echo "APP_KEY exists"
+            else
+              echo "ERROR: APP_KEY is missing from .env"
+              exit 1
+            fi
+
+            # ==========================================
+            # Cache Clear
+            # ==========================================
+
+            echo "=== Laravel Cache Clear ==="
+
+            php artisan optimize:clear
+
+            # ==========================================
+            # Optional Cache Rebuild
+            # ==========================================
+
+            echo "=== Laravel Cache Rebuild ==="
+
+            php artisan config:cache
+            php artisan route:cache
+            php artisan view:cache
+
+            # ==========================================
+            # Database Migration
+            # ==========================================
+            # Intentionally skipped.
+            # Run migration manually when required.
+            # ==========================================
+
+            echo "=== Database Migration ==="
+            echo "SKIPPED - Existing production database"
+
+            # ==========================================
+            # Final Verification
+            # ==========================================
+
+            echo "=== Final Verification ==="
+
+            test -f composer.json
+            test -f .env
+            test -f artisan
+            test -f public/index.php
+
+            echo "Laravel files verified"
+
+            echo "================================="
+            echo "   DEPLOYMENT SUCCESSFUL"
+            echo "================================="
