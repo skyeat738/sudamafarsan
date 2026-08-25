@@ -103,13 +103,12 @@ jobs:
 
             echo "=== Composer Install ==="
 
-            composer install \
-              --no-dev \
-              --prefer-dist \
-              --optimize-autoloader \
-              --no-interaction \
-              --no-scripts \
-              --no-audit
+             composer install \
+                          --no-dev \
+                          --prefer-dist \
+                          --optimize-autoloader \
+                          --no-interaction \
+                          --no-scripts
 
             echo "=== Laravel Version ==="
             php artisan --version
