@@ -10,31 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # =========================
-      # CHECKOUT GITHUB PROJECT
-      # =========================
       - name: Checkout project
         uses: actions/checkout@v4
 
-      # =========================
-      # REMOVE LOCAL-ONLY FILES
-      # =========================
-      - name: Prepare project
-        run: |
-          rm -rf .git
-          rm -rf .github
-          rm -rf vendor
-          rm -rf storage
-
-          # IMPORTANT:
-          # Do NOT upload local .env
-          rm -f .env
-
-      # =========================
-      # UPLOAD TO HOSTINGER
-      # =========================
-      - name: Upload project to Hostinger
+      - name: Deploy files
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
@@ -48,17 +27,13 @@ jobs:
           overwrite: true
           rm: false
 
-      # =========================
-      # RUN LARAVEL ON HOSTINGER
-      # =========================
-      - name: Configure and deploy Laravel
+      - name: Install Laravel on Hostinger
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USERNAME }}
           password: ${{ secrets.HOSTINGER_PASSWORD }}
           port: ${{ secrets.HOSTINGER_PORT }}
-
           command_timeout: 20m
 
           script: |
@@ -81,26 +56,15 @@ jobs:
             echo "=== Composer Check ==="
 
             if [ ! -f composer.json ]; then
-              echo "ERROR: composer.json not found!"
+              echo "ERROR: composer.json not found"
               exit 1
             fi
 
             echo "composer.json FOUND"
 
-            # =========================
-            # CREATE STORAGE DIRECTORIES
-            # =========================
-
-            mkdir -p storage/framework/cache
-            mkdir -p storage/framework/sessions
-            mkdir -p storage/framework/views
-            mkdir -p storage/logs
-
-            # =========================
-            # COMPOSER
-            # =========================
-
             echo "=== Composer Install ==="
+
+            composer config audit.block-insecure false
 
             composer install \
               --no-dev \
@@ -109,52 +73,17 @@ jobs:
               --no-interaction \
               --no-scripts
 
-            # =========================
-            # ENV CHECK
-            # =========================
+            echo "=== Laravel Version ==="
 
-            echo "=== Environment Check ==="
+            php artisan --version
 
-            if [ ! -f .env ]; then
-              echo "ERROR: .env not found on Hostinger!"
-              echo "Please create .env in:"
-              echo "$TARGET/.env"
-              exit 1
-            fi
-
-            echo ".env FOUND"
-
-            # =========================
-            # APP KEY
-            # =========================
-
-            echo "=== Laravel Key Check ==="
+            echo "=== Generate Application Key ==="
 
             php artisan key:generate --force
 
-            # =========================
-            # DATABASE
-            # =========================
-
-            echo "=== Database Migration ==="
-
-            php artisan migrate --force
-
-            # =========================
-            # CACHE
-            # =========================
-
-            echo "=== Laravel Cache Clear ==="
+            echo "=== Cache Clear ==="
 
             php artisan optimize:clear
-
-            # =========================
-            # PERMISSIONS
-            # =========================
-
-            echo "=== Storage Permissions ==="
-
-            chmod -R 775 storage bootstrap/cache || true
 
             echo "================================="
             echo "   DEPLOYMENT SUCCESSFUL"
