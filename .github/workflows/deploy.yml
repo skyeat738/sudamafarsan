@@ -10,37 +10,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       # ==========================================
-      # 1. Checkout
+      # 1. CHECKOUT PROJECT
       # ==========================================
       - name: Checkout project
         uses: actions/checkout@v4
 
       # ==========================================
-      # 2. Create clean deployment folder
+      # 2. PREPARE CLEAN DEPLOYMENT FILES
       # ==========================================
       - name: Prepare deployment files
         run: |
           set -e
 
-          echo "=== Creating clean deployment directory ==="
+          echo "================================="
+          echo " PREPARING DEPLOYMENT FILES"
+          echo "================================="
 
           mkdir -p deploy
 
           rsync -av \
             --exclude='.git' \
-            --exclude='deploy' \
             --exclude='.env' \
             --exclude='vendor' \
+            --exclude='storage/framework/cache/*' \
+            --exclude='storage/framework/sessions/*' \
+            --exclude='storage/framework/views/*' \
+            --exclude='storage/logs/*' \
+            --exclude='deploy' \
             ./ deploy/
 
-          echo "=== Deployment files ==="
-          find deploy -maxdepth 2 -type f | sort
+          echo "=== Deployment files prepared ==="
+
+          echo "=== Checking required files ==="
+
+          test -f deploy/composer.json
+          test -f deploy/artisan
+          test -f deploy/bootstrap/app.php
+
+          echo "composer.json FOUND"
+          echo "artisan FOUND"
+          echo "bootstrap/app.php FOUND"
 
       # ==========================================
-      # 3. Upload project to Hostinger
+      # 3. UPLOAD PROJECT
       # ==========================================
-      - name: Upload project
+      - name: Upload project to Hostinger
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
@@ -49,6 +65,7 @@ jobs:
           port: ${{ secrets.HOSTINGER_PORT }}
 
           source: "deploy/*"
+
           target: "/home/u310066937/domains/skynetitsolutions.com/public_html/sudamafarsan"
 
           overwrite: true
@@ -56,7 +73,7 @@ jobs:
           command_timeout: 20m
 
       # ==========================================
-      # 4. Run Laravel deployment
+      # 4. INSTALL & CONFIGURE LARAVEL
       # ==========================================
       - name: Install and configure Laravel
         uses: appleboy/ssh-action@v1
@@ -85,7 +102,11 @@ jobs:
             echo "=== Project Files ==="
             ls -la
 
-            echo "=== Checking Laravel files ==="
+            # ==========================================
+            # CHECK REQUIRED LARAVEL FILES
+            # ==========================================
+
+            echo "=== Checking Laravel Files ==="
 
             test -f composer.json
             test -f artisan
@@ -95,53 +116,134 @@ jobs:
             echo "artisan FOUND"
             echo "bootstrap/app.php FOUND"
 
+            # ==========================================
+            # PHP
+            # ==========================================
+
             echo "=== PHP Version ==="
+
             php -v
 
+            # ==========================================
+            # COMPOSER
+            # ==========================================
+
             echo "=== Composer Version ==="
+
             composer --version
+
+            # ==========================================
+            # ENVIRONMENT
+            # ==========================================
+
+            echo "=== Environment Check ==="
+
+            if [ ! -f .env ]; then
+                echo "ERROR: .env NOT FOUND!"
+                echo "Please create .env on Hostinger."
+                exit 1
+            fi
+
+            echo ".env FOUND"
+
+            # ==========================================
+            # LARAVEL DIRECTORIES
+            # ==========================================
+
+            echo "=== Preparing Laravel Directories ==="
+
+            mkdir -p bootstrap/cache
+
+            mkdir -p storage/framework/cache
+            mkdir -p storage/framework/sessions
+            mkdir -p storage/framework/views
+            mkdir -p storage/logs
+
+            chmod -R 775 bootstrap/cache
+            chmod -R 775 storage
+
+            echo "Laravel directories ready"
+
+            # ==========================================
+            # COMPOSER INSTALL
+            # ==========================================
 
             echo "=== Composer Install ==="
 
-             composer install \
-                          --no-dev \
-                          --prefer-dist \
-                          --optimize-autoloader \
-                          --no-interaction \
-                          --no-scripts
+            composer install \
+              --no-dev \
+              --prefer-dist \
+              --optimize-autoloader \
+              --no-interaction \
+              --no-scripts
+
+            echo "=== Composer Install Complete ==="
+
+            # ==========================================
+            # VERIFY VENDOR
+            # ==========================================
+
+            test -f vendor/autoload.php
+
+            echo "vendor/autoload.php FOUND"
+
+            # ==========================================
+            # LARAVEL VERSION
+            # ==========================================
 
             echo "=== Laravel Version ==="
+
             php artisan --version
 
-            echo "=== Generate Application Key ==="
+            # ==========================================
+            # APPLICATION KEY
+            # ==========================================
 
-            if [ -f .env ]; then
-                php artisan key:generate --force
+            echo "=== Application Key ==="
+
+            if grep -q "^APP_KEY=.\+" .env; then
+                echo "APP_KEY already exists"
             else
-                echo ".env not found"
-                echo "Please create .env on Hostinger first"
-                exit 1
+                echo "APP_KEY missing - generating..."
+                php artisan key:generate --force
             fi
+
+            # ==========================================
+            # CLEAR CACHE
+            # ==========================================
+
+            echo "=== Clearing Laravel Cache ==="
+
+            php artisan optimize:clear
+
+            # ==========================================
+            # STORAGE LINK
+            # ==========================================
 
             echo "=== Storage Link ==="
 
             php artisan storage:link || true
 
-            echo "=== Clear Laravel Cache ==="
+            # ==========================================
+            # FINAL PERMISSIONS
+            # ==========================================
 
-            php artisan optimize:clear
+            echo "=== Final Permissions ==="
 
-            echo "=== Cache Laravel Configuration ==="
+            chmod -R 775 bootstrap/cache
+            chmod -R 775 storage
 
-            php artisan config:cache
+            # ==========================================
+            # FINAL CHECK
+            # ==========================================
 
-            echo "=== Cache Laravel Routes ==="
+            echo "=== Final Laravel Check ==="
 
-            php artisan route:cache
+            php artisan --version
 
-            echo "=== Cache Laravel Views ==="
-
-            php artisan view:cache
+            test -f vendor/autoload.php
+            test -d bootstrap/cache
+            test -d storage
 
             echo "================================="
             echo "   DEPLOYMENT SUCCESSFUL"
