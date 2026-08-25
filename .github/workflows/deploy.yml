@@ -10,10 +10,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ==========================================
+      # 1. Checkout
+      # ==========================================
       - name: Checkout project
         uses: actions/checkout@v4
 
-      - name: Deploy files
+      # ==========================================
+      # 2. Create clean deployment folder
+      # ==========================================
+      - name: Prepare deployment files
+        run: |
+          set -e
+
+          echo "=== Creating clean deployment directory ==="
+
+          mkdir -p deploy
+
+          rsync -av \
+            --exclude='.git' \
+            --exclude='deploy' \
+            --exclude='.env' \
+            --exclude='vendor' \
+            ./ deploy/
+
+          echo "=== Deployment files ==="
+          find deploy -maxdepth 2 -type f | sort
+
+      # ==========================================
+      # 3. Upload project to Hostinger
+      # ==========================================
+      - name: Upload project
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
@@ -21,19 +48,24 @@ jobs:
           password: ${{ secrets.HOSTINGER_PASSWORD }}
           port: ${{ secrets.HOSTINGER_PORT }}
 
-          source: "."
+          source: "deploy/*"
           target: "/home/u310066937/domains/skynetitsolutions.com/public_html/sudamafarsan"
 
           overwrite: true
-          rm: false
+          timeout: 2m
+          command_timeout: 20m
 
-      - name: Install Laravel on Hostinger
+      # ==========================================
+      # 4. Run Laravel deployment
+      # ==========================================
+      - name: Install and configure Laravel
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USERNAME }}
           password: ${{ secrets.HOSTINGER_PASSWORD }}
           port: ${{ secrets.HOSTINGER_PORT }}
+
           command_timeout: 20m
 
           script: |
@@ -53,37 +85,64 @@ jobs:
             echo "=== Project Files ==="
             ls -la
 
-            echo "=== Composer Check ==="
+            echo "=== Checking Laravel files ==="
 
-            if [ ! -f composer.json ]; then
-              echo "ERROR: composer.json not found"
-              exit 1
-            fi
+            test -f composer.json
+            test -f artisan
+            test -f bootstrap/app.php
 
             echo "composer.json FOUND"
+            echo "artisan FOUND"
+            echo "bootstrap/app.php FOUND"
+
+            echo "=== PHP Version ==="
+            php -v
+
+            echo "=== Composer Version ==="
+            composer --version
 
             echo "=== Composer Install ==="
-
-            composer config audit.block-insecure false
 
             composer install \
               --no-dev \
               --prefer-dist \
               --optimize-autoloader \
               --no-interaction \
-              --no-scripts
+              --no-scripts \
+              --no-audit
 
             echo "=== Laravel Version ==="
-
             php artisan --version
 
             echo "=== Generate Application Key ==="
 
-            php artisan key:generate --force
+            if [ -f .env ]; then
+                php artisan key:generate --force
+            else
+                echo ".env not found"
+                echo "Please create .env on Hostinger first"
+                exit 1
+            fi
 
-            echo "=== Cache Clear ==="
+            echo "=== Storage Link ==="
+
+            php artisan storage:link || true
+
+            echo "=== Clear Laravel Cache ==="
 
             php artisan optimize:clear
+
+            echo "=== Cache Laravel Configuration ==="
+
+            php artisan config:cache
+
+            echo "=== Cache Laravel Routes ==="
+
+            php artisan route:cache
+
+            echo "=== Cache Laravel Views ==="
+
+            php artisan view:cache
 
             echo "================================="
             echo "   DEPLOYMENT SUCCESSFUL"
