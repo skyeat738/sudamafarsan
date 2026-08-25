@@ -5,26 +5,54 @@ on:
     branches:
       - main
 
-  workflow_dispatch:
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
 
-      # ==========================================
-      # Checkout GitHub Repository
-      # ==========================================
+      # =========================
+      # CHECKOUT GITHUB PROJECT
+      # =========================
       - name: Checkout project
         uses: actions/checkout@v4
 
-      # ==========================================
-      # Deploy to Hostinger
-      # ==========================================
-      - name: Deploy to Hostinger
-        uses: appleboy/ssh-action@v1
+      # =========================
+      # REMOVE LOCAL-ONLY FILES
+      # =========================
+      - name: Prepare project
+        run: |
+          rm -rf .git
+          rm -rf .github
+          rm -rf vendor
+          rm -rf storage
 
+          # IMPORTANT:
+          # Do NOT upload local .env
+          rm -f .env
+
+      # =========================
+      # UPLOAD TO HOSTINGER
+      # =========================
+      - name: Upload project to Hostinger
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOSTINGER_HOST }}
+          username: ${{ secrets.HOSTINGER_USERNAME }}
+          password: ${{ secrets.HOSTINGER_PASSWORD }}
+          port: ${{ secrets.HOSTINGER_PORT }}
+
+          source: "."
+          target: "/home/u310066937/domains/skynetitsolutions.com/public_html/sudamafarsan"
+
+          overwrite: true
+          rm: false
+
+      # =========================
+      # RUN LARAVEL ON HOSTINGER
+      # =========================
+      - name: Configure and deploy Laravel
+        uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.HOSTINGER_HOST }}
           username: ${{ secrets.HOSTINGER_USERNAME }}
@@ -36,90 +64,41 @@ jobs:
           script: |
             set -e
 
+            TARGET="/home/u310066937/domains/skynetitsolutions.com/public_html/sudamafarsan"
+
             echo "================================="
             echo "   DEPLOYING SUDAMA FARSAN"
             echo "================================="
-
-            TARGET="/home/u310066937/domains/skynetitsolutions.com/public_html/sudamafarsan"
-
-            echo "=== Target Directory ==="
-            echo "$TARGET"
 
             cd "$TARGET"
 
             echo "=== Current Directory ==="
             pwd
 
-            echo "=== Before Git Update ==="
+            echo "=== Project Files ==="
             ls -la
-
-            # ==========================================
-            # Git Update
-            # ==========================================
-
-            echo "=== Git Update ==="
-
-            git fetch https://x-access-token:${{ github.token }}@github.com/skyeat738/sudamafarsan.git main
-
-            git reset --hard FETCH_HEAD
-
-            echo "=== Git Update Complete ==="
-
-            # ==========================================
-            # IMPORTANT:
-            # .env is NOT stored in GitHub.
-            # Existing Hostinger .env remains untouched.
-            # ==========================================
-
-            echo "=== Files After Git Update ==="
-            ls -la
-
-            # ==========================================
-            # Check Laravel Project
-            # ==========================================
 
             echo "=== Composer Check ==="
 
             if [ ! -f composer.json ]; then
-              echo "ERROR: composer.json NOT FOUND!"
-              echo "Current directory:"
-              pwd
-              echo "Files:"
-              ls -la
+              echo "ERROR: composer.json not found!"
               exit 1
             fi
 
             echo "composer.json FOUND"
 
-            # ==========================================
-            # Check .env
-            # ==========================================
+            # =========================
+            # CREATE STORAGE DIRECTORIES
+            # =========================
 
-            echo "=== Environment Check ==="
+            mkdir -p storage/framework/cache
+            mkdir -p storage/framework/sessions
+            mkdir -p storage/framework/views
+            mkdir -p storage/logs
 
-            if [ ! -f .env ]; then
-              echo "ERROR: .env NOT FOUND on Hostinger!"
-              echo "Create the production .env before deployment."
-              exit 1
-            fi
-
-            echo ".env FOUND"
-
-            # ==========================================
-            # PHP
-            # ==========================================
-
-            echo "=== PHP Version ==="
-
-            php -v
-
-            # ==========================================
-            # Composer
-            # ==========================================
-
-            echo "=== Composer Version ==="
-
-            composer --version
+            # =========================
+            # COMPOSER
+            # =========================
 
             echo "=== Composer Install ==="
 
@@ -130,70 +109,52 @@ jobs:
               --no-interaction \
               --no-scripts
 
-            # ==========================================
-            # Laravel
-            # ==========================================
+            # =========================
+            # ENV CHECK
+            # =========================
 
-            echo "=== Laravel Version ==="
+            echo "=== Environment Check ==="
 
-            php artisan --version
-
-            # ==========================================
-            # Application Key
-            # ==========================================
-            # DO NOT run key:generate on every deployment.
-            # APP_KEY must remain stable in production.
-            # ==========================================
-
-            echo "=== APP KEY Check ==="
-
-            if grep -q "^APP_KEY=.\+" .env; then
-              echo "APP_KEY exists"
-            else
-              echo "ERROR: APP_KEY is missing from .env"
+            if [ ! -f .env ]; then
+              echo "ERROR: .env not found on Hostinger!"
+              echo "Please create .env in:"
+              echo "$TARGET/.env"
               exit 1
             fi
 
-            # ==========================================
-            # Cache Clear
-            # ==========================================
+            echo ".env FOUND"
+
+            # =========================
+            # APP KEY
+            # =========================
+
+            echo "=== Laravel Key Check ==="
+
+            php artisan key:generate --force
+
+            # =========================
+            # DATABASE
+            # =========================
+
+            echo "=== Database Migration ==="
+
+            php artisan migrate --force
+
+            # =========================
+            # CACHE
+            # =========================
 
             echo "=== Laravel Cache Clear ==="
 
             php artisan optimize:clear
 
-            # ==========================================
-            # Optional Cache Rebuild
-            # ==========================================
+            # =========================
+            # PERMISSIONS
+            # =========================
 
-            echo "=== Laravel Cache Rebuild ==="
+            echo "=== Storage Permissions ==="
 
-            php artisan config:cache
-            php artisan route:cache
-            php artisan view:cache
-
-            # ==========================================
-            # Database Migration
-            # ==========================================
-            # Intentionally skipped.
-            # Run migration manually when required.
-            # ==========================================
-
-            echo "=== Database Migration ==="
-            echo "SKIPPED - Existing production database"
-
-            # ==========================================
-            # Final Verification
-            # ==========================================
-
-            echo "=== Final Verification ==="
-
-            test -f composer.json
-            test -f .env
-            test -f artisan
-            test -f public/index.php
-
-            echo "Laravel files verified"
+            chmod -R 775 storage bootstrap/cache || true
 
             echo "================================="
             echo "   DEPLOYMENT SUCCESSFUL"
