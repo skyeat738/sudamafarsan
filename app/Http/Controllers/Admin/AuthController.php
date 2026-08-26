@@ -17,21 +17,27 @@ class AuthController extends Controller
         return view('admin.login');
     }
 
-    public function login(Request $request)
-    {
-        $credentials = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required'],
-        ]);
+  public function login(Request $request)
+{
+    $credentials = $request->validate([
+        'email' => ['required', 'email'],
+        'password' => ['required'],
+    ]);
 
-        if (Auth::guard('admin')->attempt($credentials, $request->boolean('remember'))) {
-            $request->session()->regenerate();
+    $admin = \App\Models\Admin::where('email', $credentials['email'])->first();
 
-            return redirect()->intended(route('admin.dashboard'));
-        }
+    if ($admin && password_verify($credentials['password'], $admin->password)) {
+        Auth::guard('admin')->login($admin, $request->boolean('remember'));
 
-        return back()->withErrors(['email' => 'Invalid email or password.'])->onlyInput('email');
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('admin.dashboard'));
     }
+
+    return back()
+        ->withErrors(['email' => 'Invalid email or password.'])
+        ->onlyInput('email');
+}
 
     public function logout(Request $request)
     {
